@@ -1,0 +1,19 @@
+vizier:
+  - id: "J/ApJS/252/3"
+    label: "li2021"
+    table: "J/ApJS/252/3/hivelscs"
+    note: "Li et al. 2021, ApJS 252, 3 — HiVelSCs (591 high-velocity-star candidates)."
+  - id: "J/AJ/166/12"
+    label: "li2023"
+    table: "J/AJ/166/12/table5"
+    note: |
+      Li et al. 2023, AJ 166, 12 — Velocity data for 88 very high velocity stars.
+      We use table5 (Table A1: full 88 candidates), NOT table2 (52 filtered HVS).
+      Other sub-tables in this VizieR record:
+        table2 (52): HVS candidates after escape-velocity-curve filtering;
+        table3 (8):  HiVel passing within 1 kpc of the Galactic centre;
+        table4 (15): extreme-velocity stars probably from Sgr dSph.
+  - id: "J/AJ/167/76"
+    label: "liao2024"
+    table: "J/AJ/167/76/table6"
+    note: "Liao et al. 2024, AJ 167, 76 — 519 HiVels including the LMC impact."

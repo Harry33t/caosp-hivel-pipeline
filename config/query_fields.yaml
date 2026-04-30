@@ -1,0 +1,31 @@
+gaia_dr3:
+  - source_id
+  - ra
+  - dec
+  - parallax
+  - parallax_error
+  - pmra
+  - pmra_error
+  - pmdec
+  - pmdec_error
+  - radial_velocity
+  - radial_velocity_error
+  - phot_g_mean_mag
+  - phot_bp_mean_mag
+  - phot_rp_mean_mag
+  - ruwe
+
+lamost:
+  # Column names follow the LAMOST DR9 LRS stellar-parameter catalog header.
+  # Some releases use 'specid' instead of 'obsid'; loader normalizes both.
+  - obsid
+  - ra
+  - dec
+  - rv
+  - rv_err
+  - teff
+  - logg
+  - feh
+  - snrg
+  - snrr
+  - snri

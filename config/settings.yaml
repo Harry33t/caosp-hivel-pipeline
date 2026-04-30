@@ -1,0 +1,36 @@
+network:
+  rate_limit_rps: 1.0          # global cap per external host
+  request_timeout_s: 60
+  retry:
+    max_attempts: 5
+    backoff_initial_s: 2.0
+    backoff_max_s: 60.0
+    backoff_multiplier: 2.0
+  user_agent: "caosp-hivel-pipeline/0.1 (mailto:you@example.com)"
+
+crossmatch:
+  radius_arcsec: 1.0
+
+gaia:
+  # Number of source_ids per uploaded ADQL chunk. Keep modest to stay within Gaia upload limits.
+  upload_chunk_size: 5000
+  # Async TAP jobs are persisted so a re-run can pick them up.
+  use_async: true
+
+lamost:
+  # Stick to public catalog tables; spectra are NOT downloaded.
+  release: "dr9"               # one of: dr8, dr9
+  catalog_kind: "lrs_stellar"  # low-res stellar parameter catalog
+
+simbad:
+  top_n: 200                   # validate at most this many candidates
+  fields:
+    - "main_id"
+    - "otype"
+    - "rv_value"
+    - "plx"
+    - "flux(V)"
+
+logging:
+  level: "INFO"
+  file: "logs/download.log"

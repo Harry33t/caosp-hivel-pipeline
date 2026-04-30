@@ -1,0 +1,7 @@
+source_id,ra,dec,error,P_unbound,distance_kpc,catalogs
+1383279090527227264,240.3373434419254,41.166772756632206,"Incorrect ADQL query: 1 unresolved identifiers: rvz_value [l.1 c.181 - l.1 c.198]!
+  - Unknown column ""basic.""rvz_value"""" !",0.996,6.38669482421875,"li2021,liao2024"
+1204061267883975040,238.11124181886743,20.19693940953324,"Incorrect ADQL query: 1 unresolved identifiers: rvz_value [l.1 c.181 - l.1 c.198]!
+  - Unknown column ""basic.""rvz_value"""" !",0.67,9.7394677734375,liao2024
+3877058564258758656,154.44467629206406,9.869414960885791,"Incorrect ADQL query: 1 unresolved identifiers: rvz_value [l.1 c.181 - l.1 c.198]!
+  - Unknown column ""basic.""rvz_value"""" !",0.571,5.51031884765625,liao2024

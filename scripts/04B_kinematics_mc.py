@@ -1,0 +1,181 @@
+"""Step 4B: Galactic kinematics + Monte Carlo error propagation.
+
+Reads ``data/processed/hivel_gaia_master.parquet`` (1101 rows from Step 4A),
+computes per-star {U, V, W, V_GSR, V_total, v_esc, P_unbound, P_v500} and
+attaches MC mean/std. Writes:
+
+    data/processed/hivel_gaia_kinematics.parquet
+    data/processed/hivel_gaia_kinematics.csv
+    data/processed/top_unbound_candidates.csv  (Top 50 by P_unbound)
+    reports/kinematics_summary.md
+"""
+from __future__ import annotations
+import sys
+import time
+from pathlib import Path
+import numpy as np
+import pandas as pd
+from tqdm import tqdm
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+
+from caosp_hivel.paths import ensure_dirs, PROCESSED_DIR
+from caosp_hivel.kinematics import compute_one, monte_carlo
+from caosp_hivel.log import get_logger
+
+REPORTS_DIR = ROOT / "reports"
+N_MC = 1000
+
+
+def main() -> int:
+    ensure_dirs()
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    log = get_logger("caosp.step4b")
+
+    src = PROCESSED_DIR / "hivel_gaia_master.parquet"
+    if not src.exists():
+        log.error("missing %s — run step 4A first", src)
+        return 1
+    df = pd.read_parquet(src)
+    log.info("master loaded: %d rows", len(df))
+
+    rng = np.random.default_rng(42)
+    rows = []
+    t0 = time.time()
+    for r in tqdm(df.itertuples(index=False), total=len(df), ncols=80):
+        ra, dec = float(r.ra), float(r.dec)
+        plx = float(r.parallax)
+        plx_e = float(r.parallax_error) if pd.notna(r.parallax_error) else np.nan
+        pmra, pmra_e = float(r.pmra), float(r.pmra_error) if pd.notna(r.pmra_error) else np.nan
+        pmdec, pmdec_e = float(r.pmdec), float(r.pmdec_error) if pd.notna(r.pmdec_error) else np.nan
+        rv = float(r.radial_velocity) if pd.notna(r.radial_velocity) else np.nan
+        rv_e = float(r.radial_velocity_error) if pd.notna(r.radial_velocity_error) else 30.0
+
+        # point estimate (uses RV=0 if missing — flagged via has_rv below)
+        k = compute_one(ra, dec, plx, pmra, pmdec, rv if np.isfinite(rv) else 0.0)
+        mc = monte_carlo(
+            ra, dec, plx, plx_e, pmra, pmra_e, pmdec, pmdec_e, rv, rv_e,
+            n=N_MC, rng=rng,
+        )
+        rows.append({
+            "source_id": int(r.source_id),
+            "distance_kpc": k.distance_kpc,
+            "U": k.U, "V": k.V, "W": k.W,
+            "V_total": k.V_total, "V_GSR": k.V_GSR,
+            "x_gc": k.x_gc, "y_gc": k.y_gc, "z_gc": k.z_gc,
+            "R_gc": k.R_gc,
+            "v_esc": k.v_esc,
+            "v_ratio": k.v_ratio,
+            "V_total_mc_mean": mc["V_total_mean"],
+            "V_total_mc_std": mc["V_total_std"],
+            "V_GSR_mc_mean": mc["V_GSR_mean"],
+            "V_GSR_mc_std": mc["V_GSR_std"],
+            "P_v500": mc["P_v500"],
+            "P_unbound": mc["P_unbound"],
+            "has_rv": mc["has_rv"],
+            "n_mc_ok": mc["n_mc"],
+        })
+    log.info("MC done in %.1f s", time.time() - t0)
+
+    kin = pd.DataFrame(rows)
+    out = df.merge(kin, on="source_id", how="left")
+
+    # quality flags
+    out["q_ruwe"] = out["ruwe"] < 1.4
+    out["q_plx"] = out["parallax_over_error"] > 5
+    out["q_rv"] = out["radial_velocity"].notna()
+    out["q_all"] = out["q_ruwe"] & out["q_plx"] & out["q_rv"]
+
+    out_parquet = PROCESSED_DIR / "hivel_gaia_kinematics.parquet"
+    out_csv = PROCESSED_DIR / "hivel_gaia_kinematics.csv"
+    out.to_parquet(out_parquet, index=False)
+    out.to_csv(out_csv, index=False)
+    log.info("kinematics -> %s + .csv", out_parquet)
+
+    # Top unbound candidates (must have RV and pass quality)
+    top = out[out["q_all"]].sort_values("P_unbound", ascending=False).head(50)
+    top_cols = [
+        "source_id", "ra", "dec", "catalogs",
+        "distance_kpc", "V_total", "V_GSR", "v_esc", "v_ratio",
+        "V_GSR_mc_mean", "V_GSR_mc_std", "P_v500", "P_unbound",
+        "ruwe", "parallax_over_error", "radial_velocity",
+    ]
+    top = top[[c for c in top_cols if c in top.columns]]
+    top_path = PROCESSED_DIR / "top_unbound_candidates.csv"
+    top.to_csv(top_path, index=False)
+    log.info("top 50 -> %s", top_path)
+
+    # ---------- summary report ----------
+    n = len(out)
+    n_rv = int(out["q_rv"].sum())
+    summary = {
+        "rows": n,
+        "with_RV": n_rv,
+        "V_total>500 (point est., RV-known)": int(((out["V_total"] > 500) & out["q_rv"]).sum()),
+        "V_GSR>500 (point est., RV-known)":   int(((out["V_GSR"]   > 500) & out["q_rv"]).sum()),
+        "P_unbound>0.5":  int((out["P_unbound"] > 0.5).sum()),
+        "P_unbound>0.9":  int((out["P_unbound"] > 0.9).sum()),
+        "v_ratio>1 (point)": int((out["v_ratio"] > 1).sum()),
+    }
+    flags = {
+        "q_ruwe": int(out["q_ruwe"].sum()),
+        "q_plx":  int(out["q_plx"].sum()),
+        "q_rv":   int(out["q_rv"].sum()),
+        "q_all":  int(out["q_all"].sum()),
+    }
+
+    md = []
+    md.append("# Kinematics & Monte Carlo report (Step 4B)\n")
+    md.append(f"Generated by `scripts/04B_kinematics_mc.py`. MC = {N_MC} draws/star.\n")
+    md.append("## 1. Conventions\n")
+    md.append("- Distance proxy = 1 / parallax (Bailer-Jones to be added in Step 4D).")
+    md.append("- Solar position: R☉ = 8.122 kpc, z☉ = 0.0208 kpc (GRAVITY 2018 / Bennett & Bovy 2019).")
+    md.append("- Solar motion (galactocentric Cartesian): (12.9, 245.6, 7.78) km/s (Reid & Brunthaler 2020 / Schönrich+ 2010).")
+    md.append("- Galactic potential: galpy `MWPotential2014` (Bovy 2015). v_esc evaluated in the plane (z = 0).\n")
+
+    md.append("## 2. Sample counts\n")
+    md.append("| metric | count | %% of master |")
+    md.append("|---|---:|---:|")
+    for k, v in summary.items():
+        md.append(f"| {k} | {v} | {100*v/n:.1f}% |")
+    md.append("")
+
+    md.append("## 3. Quality flags\n")
+    md.append("| flag | count | description |")
+    md.append("|---|---:|---|")
+    md.append(f"| q_ruwe | {flags['q_ruwe']} | ruwe < 1.4 |")
+    md.append(f"| q_plx  | {flags['q_plx']}  | parallax_over_error > 5 |")
+    md.append(f"| q_rv   | {flags['q_rv']}   | Gaia radial_velocity not null |")
+    md.append(f"| **q_all** | **{flags['q_all']}** | all three above |\n")
+
+    md.append("## 4. V_GSR distribution (point estimate, q_all subset)\n")
+    sub = out[out["q_all"]]["V_GSR"].dropna()
+    if len(sub):
+        q = sub.quantile([0.5, 0.75, 0.9, 0.99]).round(1).to_dict()
+        md.append("| quantile | V_GSR (km/s) |")
+        md.append("|---|---:|")
+        for p, v in q.items():
+            md.append(f"| {int(p*100)}% | {v} |")
+        md.append("")
+
+    md.append("## 5. Outputs\n")
+    md.append(f"- `{out_parquet.relative_to(ROOT)}`")
+    md.append(f"- `{out_csv.relative_to(ROOT)}`")
+    md.append(f"- `{top_path.relative_to(ROOT)}` — Top-50 by P_unbound (q_all subset)\n")
+
+    md.append("## 6. Caveats\n")
+    md.append("- Stars without Gaia RV (q_rv = False) get RV = 0 in the point estimate; MC sets P_unbound = NaN for them. Treat their V_total as a tangential-only lower bound until LAMOST RVs are merged in Step 5.")
+    md.append("- v_esc uses the planar potential at the star's R; off-plane (high |z|) corrections are O(few %).")
+    md.append("- 1/parallax is biased for parallax_over_error < ~5; we recommend filtering on q_plx for any kinematics-based inference.\n")
+
+    out_md = REPORTS_DIR / "kinematics_summary.md"
+    out_md.write_text("\n".join(md), encoding="utf-8")
+    log.info("summary -> %s", out_md)
+
+    print(f"\nKinematics: {n} rows, q_all={flags['q_all']}, P_unbound>0.5: {summary['P_unbound>0.5']}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
