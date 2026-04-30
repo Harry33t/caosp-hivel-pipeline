@@ -1,102 +1,102 @@
 # caosp-hivel-pipeline
 
-Reproducible Gaia DR3 + LAMOST DR9 reassessment of three published
-high-velocity-star catalogues
-([Li et al. 2021](https://doi.org/10.3847/1538-4365/abc16e),
-[Li et al. 2023](https://doi.org/10.3847/1538-3881/acd1dc),
-[Liao et al. 2024](https://doi.org/10.3847/1538-3881/ad18c4))
-and the companion code for the manuscript
+A reproducible Gaia DR3 + LAMOST DR9 analysis pipeline for high-velocity
+star (HVS) candidate samples drawn from VizieR-published catalogues. The
+pipeline pulls public catalogue data, cross-matches it, derives
+Galactocentric kinematics with Monte Carlo error propagation, and
+isolates the impact of the distance estimator on unbound classification.
 
-> *A Gaia DR3–LAMOST reassessment of high-velocity star candidates with
-> geometric-distance-aware kinematics*
-> F.\ Li and G.\ Huang, submitted to
-> *Contributions of the Astronomical Observatory Skalnaté Pleso* (CAOSP).
+## What the pipeline does
 
-## Headline result
+1. **Catalogue ingest** — three high-velocity-star candidate catalogues
+   from VizieR via `astroquery.vizier`.
+2. **Gaia DR3 enrichment** — astrometry, photometry, RV and `ruwe` via
+   asynchronous TAP upload-joins against `gaiadr3.gaia_source`.
+3. **Bailer-Jones distance attachment** — geometric distances from
+   `external.gaiaedr3_distance` (Bailer-Jones et al. 2021), with
+   per-source 16th/84th percentiles for log-normal MC sampling.
+4. **LAMOST DR9 LRS cross-match** — 1″ sky cross-match against the
+   public stellar-parameter catalogue, with multi-epoch handling and a
+   best-SNR record selection.
+5. **Sample-quality flags** — `q_gaia_astrometry`, `q_lamost_quality`,
+   Gaia/LAMOST RV consistency, plus the resulting analysis sub-samples.
+6. **Galactocentric kinematics** — $U/V/W$, $v_{\rm grf}$ and the local
+   escape speed $v_{\rm esc}(R_{\rm gc})$ under the galpy
+   `MWPotential2014` Galactic potential, with 1000-draw Monte Carlo
+   uncertainty propagation per star.
+7. **Distance-estimator sensitivity** — same-sample re-runs with
+   $1/\varpi$ vs Bailer-Jones distances on the final-strict subset.
+8. **Radial-velocity sensitivity** — same-sample re-runs with Gaia DR3
+   RV vs LAMOST RV on the final-strict subset.
 
-On a fixed final-strict sample of 356 stars (Gaia astrometric quality +
-1 arcsec LAMOST DR9 LRS cross-match + Gaia–LAMOST RV consistency), the
-count of likely unbound stars under the galpy `MWPotential2014` Galactic
-potential changes as follows when only the distance estimator is varied:
+## Compliance & ethics
 
-| threshold | inverse parallax | Bailer-Jones |
-|---|---:|---:|
-| `P_unbound > 0.5` | **48** | **3** |
-| `P_unbound > 0.7` | 29 | 1 |
-| `P_unbound > 0.9` | **12** | **1** |
+The HTTP layer (`src/caosp_hivel/net.py`) enforces:
 
-45 stars are downgraded across `P_unbound = 0.5` and none are gained.
-Substituting LAMOST radial velocities for Gaia radial velocities on the
-same sample changes the median Galactocentric speed by 0.00 km/s and
-flips the classification of one star. The unbound classification is
-therefore distance-dominated, not RV-dominated.
+- ≤ 1 request/s per external host (configurable in
+  `config/settings.yaml`);
+- a polite `User-Agent` carrying a contact address;
+- exponential-backoff retries via `tenacity`;
+- resumable runs: cached outputs are skipped, TAP async jobs are
+  persisted in `cache/tap_jobs.json`;
+- no browser emulation, no proxy pools, no CAPTCHA bypass, no
+  full-archive scraping. The Gaia full source table and LAMOST spectra
+  are never downloaded.
 
-## Repository layout
+## Layout
 
 ```
 caosp-hivel-pipeline/
-├── manuscript/           # CAOSP LaTeX source + compiled PDF + cover letter
-├── scripts/              # 00–08 numbered pipeline entry points
-├── src/caosp_hivel/      # library code (TAP, kinematics, cross-match …)
-├── config/               # YAML knobs (rates, fields, catalogue ids)
-├── tests/                # pytest including the source_id integrity guard
-├── reports/              # methodology & QC notes that the paper cites
-├── data/processed/       # small CSVs referenced from the paper (large
-│                         # parquet products are .gitignored)
-└── paper/                # auto-generated figure & table artefacts
+├── config/                YAML knobs (rates, fields, catalogue ids)
+├── src/caosp_hivel/       library modules (net, tap, kinematics, ...)
+├── scripts/               00–08 numbered pipeline entry points
+├── tests/                 pytest, including a 19-digit source_id
+│                          integrity guard
+├── data/                  staging directories (mostly .gitignored)
+└── notebooks/             optional exploratory notebooks
 ```
 
-## How to reproduce the paper
+## How to run
 
 ```bash
-# 1) Python 3.10+ environment
-python -m venv .venv && source .venv/Scripts/activate    # Windows: .venv\Scripts\activate.bat
-pip install -e .[dev]
+# 1) Python 3.10+ environment.
+python -m venv .venv && .venv/Scripts/python -m pip install -e .[dev]
 
-# 2) Public data fetches
+# 2) Public Gaia + VizieR fetches. Resumable.
 python scripts/00_check_env.py
-python scripts/01_fetch_vizier_hivel_catalogs.py     # VizieR (small)
-python scripts/02_fetch_gaia_dr3_fields.py           # Gaia archive (uploads chunks)
+python scripts/01_fetch_vizier_hivel_catalogs.py
+python scripts/02_fetch_gaia_dr3_fields.py
+python scripts/04D_bailer_jones_distance.py
 
-# 3) LAMOST DR9 LRS catalogue (~2 GB; not redistributed in this repo)
-#    Download the public DR9 v2.0 LRS stellar-parameter catalogue manually
-#    and place it under data/external/lamost/dr9_v2.0_LRS_stellar.csv.gz
+# 3) LAMOST DR9 LRS (~2 GB; not redistributed in this repo). Place the
+#    public file under data/external/lamost/dr9_v2.0_LRS_stellar.csv.gz.
 python scripts/05_lamost_crossmatch.py
 
-# 4) Sample definition + Bailer-Jones distance + final kinematics + figs
+# 4) Sample definition + final kinematics.
 python scripts/04A_build_gaia_master_qc.py
 python scripts/04B_kinematics_mc.py
-python scripts/04D_bailer_jones_distance.py
 python scripts/06_define_final_sample.py
 python scripts/06B_final_kinematics.py
 python scripts/06C_same_sample_distance_sensitivity.py
 python scripts/07_paper_figures_tables.py
-
-# 5) Compile the manuscript (requires TeX Live)
-cd manuscript && bash build.sh
+python scripts/08_top3_simbad_check.py
 ```
 
-## Compliance rules
+`make all` runs the full chain; `pytest -q` runs the unit tests.
 
-The pipeline enforces, via `src/caosp_hivel/net.py`:
+## Software dependencies
 
-- ≤ 1 request/s per external host (configurable in `config/settings.yaml`);
-- polite `User-Agent` with a contact address;
-- exponential-backoff retries through `tenacity`;
-- resumable runs: cached outputs are skipped, TAP async jobs are
-  persisted in `cache/tap_jobs.json`;
-- no browser emulation, proxy pools, CAPTCHA bypass, or full-archive
-  dumps. The Gaia full source table and LAMOST spectra are never
-  downloaded.
+`astropy`, `astroquery`, `pyvo`, `galpy`, `pandas`, `numpy`, `scipy`,
+`tenacity`, `pyarrow`, `matplotlib`. Pinned in `pyproject.toml` /
+`requirements.txt`.
 
-## Citing this work
+## Citing the upstream archives
 
-If you use this code or the supplementary CSV in published work, please
-cite the manuscript above (CAOSP DOI to be assigned) and acknowledge the
-upstream archives (Gaia DPAC, LAMOST, VizieR) following
+If you use this code or its outputs, please acknowledge the Gaia,
+LAMOST, VizieR and SIMBAD archives following the templates in
 [`CITATION.md`](CITATION.md).
 
 ## License
 
-MIT — see [`LICENSE`](LICENSE). Catalogues fetched from VizieR, the Gaia
-archive and LAMOST remain governed by their own distribution terms.
+[MIT](LICENSE). Catalogues fetched from VizieR, the Gaia archive and
+LAMOST remain governed by their own distribution terms.

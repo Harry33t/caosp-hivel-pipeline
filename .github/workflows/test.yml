@@ -1,0 +1,38 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  pytest:
+    name: pytest on ${{ matrix.os }} / Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.10", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install package and dev dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .[dev]
+
+      - name: Run pytest
+        run: |
+          python -m pytest -q
+        # The source_id integrity test self-skips when paper-private
+        # artefacts (data/processed/, paper/tables/) are not present;
+        # the rest of the suite runs unconditionally.

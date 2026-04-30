@@ -27,6 +27,16 @@ CSV_FINAL_TOP = ROOT / "data" / "processed" / "final_top_candidates.csv"
 CSV_TABLE3    = ROOT / "paper" / "tables" / "table3_final_top_candidates.csv"
 TEX_TABLE3    = ROOT / "paper" / "tables" / "table3_final_top_candidates.tex"
 
+# These artefacts are produced locally by the full Step 6B/7 chain and are
+# not redistributed in the public repository (they would expose paper
+# results). Skip the entire module when any of them is missing so the
+# public CI run does not fail.
+_artefacts_present = all(p.exists() for p in (CSV_FINAL_TOP, CSV_TABLE3, TEX_TABLE3))
+pytestmark = pytest.mark.skipif(
+    not _artefacts_present,
+    reason="paper-private artefacts not present (run scripts/06B + scripts/07 locally first)",
+)
+
 # Anchor Top-1 / Top-2 source_ids that demonstrated the original bug
 # (their last few digits used to flip when routed through float64).
 ANCHOR_SOURCE_IDS = ["1383279090527227264", "1204061267883975040"]
@@ -39,24 +49,29 @@ def _ids_from_final_top_csv() -> list[str]:
 
 
 def _ids_from_table3_csv() -> list[str]:
-    """First column of the Step 7 CSV. Header is LaTeX-flavoured, so we
-    read positionally."""
+    """source_id column of the Step 7 main-paper CSV. The header column
+    name uses LaTeX flavouring so we locate it by content rather than by
+    a hard-coded string."""
     df = pd.read_csv(CSV_TABLE3, dtype=str)
-    return df.iloc[:, 0].astype(str).tolist()
+    sid_col = next(c for c in df.columns if "source" in c.lower())
+    return df[sid_col].astype(str).tolist()
 
 
 def _ids_from_table3_tex() -> list[str]:
-    """Pull the leading 19-digit token from each data row of the LaTeX
-    tabular. We deliberately do NOT use a LaTeX parser; the regex matches
-    only the leftmost long-digit run on a line that ends with `\\\\`."""
+    """Pull the 17-20-digit Gaia source_id from each data row of the
+    LaTeX tabular. The Top-15 main-paper table now has a leading `rank`
+    column, so the source_id is the LONGEST digit run on the line, not
+    the leftmost. We use a permissive scan and pick the longest match.
+    """
     text = TEX_TABLE3.read_text(encoding="utf-8")
     ids = []
     for line in text.splitlines():
         if not line.rstrip().endswith(r"\\"):
             continue
-        m = re.match(r"\s*(\d{17,20})\b", line)
-        if m:
-            ids.append(m.group(1))
+        candidates = re.findall(r"\b(\d{17,20})\b", line)
+        if candidates:
+            # The Gaia source_id is the only 17-20 digit token in our cells.
+            ids.append(max(candidates, key=len))
     return ids
 
 
@@ -67,18 +82,20 @@ def test_files_exist(path: Path) -> None:
 
 
 # ---------- inter-file consistency ----------
-def test_three_files_agree_on_top30():
+def test_three_files_agree_on_top15():
+    """The Step 6B CSV holds the full Top-30; the Step 7 main-paper
+    CSV/TeX hold the Top-15. The first 15 rows must match across all
+    three files byte-for-byte."""
     a = _ids_from_final_top_csv()
     b = _ids_from_table3_csv()
     c = _ids_from_table3_tex()
 
-    assert len(a) == 30, f"final_top_candidates.csv has {len(a)} rows, expected 30"
-    assert len(b) == 30, f"table3 csv has {len(b)} rows, expected 30"
-    assert len(c) == 30, f"table3 tex parsed {len(c)} ids, expected 30"
+    assert len(a) >= 30, f"final_top_candidates.csv has {len(a)} rows, expected at least 30"
+    assert len(b) == 15, f"table3 csv has {len(b)} rows, expected 15 (Top-15 main paper)"
+    assert len(c) == 15, f"table3 tex parsed {len(c)} ids, expected 15"
 
-    # Compare row-wise. Show the first mismatching row to make failures
-    # actionable.
-    for i, (x, y, z) in enumerate(zip(a, b, c), 1):
+    # Compare row-wise on the overlapping prefix (15 rows).
+    for i, (x, y, z) in enumerate(zip(a[:15], b, c), 1):
         assert x == y == z, (
             f"row {i} disagree: final_top.csv={x} table3.csv={y} table3.tex={z}"
         )
