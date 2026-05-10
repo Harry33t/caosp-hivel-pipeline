@@ -25,13 +25,13 @@ REPORTS_DIR = ROOT / "reports"
 # journal-style defaults
 plt.rcParams.update({
     "font.family": "DejaVu Serif",
-    "font.size": 10,
-    "axes.titlesize": 11,
-    "axes.labelsize": 10,
-    "legend.fontsize": 8,
-    "xtick.labelsize": 9,
-    "ytick.labelsize": 9,
-    "axes.linewidth": 0.8,
+    "font.size": 11,
+    "axes.titlesize": 12,
+    "axes.labelsize": 12,
+    "legend.fontsize": 10,
+    "xtick.labelsize": 11,
+    "ytick.labelsize": 11,
+    "axes.linewidth": 0.9,
     "xtick.direction": "in",
     "ytick.direction": "in",
     "xtick.top": True,
@@ -166,7 +166,7 @@ def fig2_sky(only: pd.DataFrame, strict: pd.DataFrame, top: pd.DataFrame):
 
     if not only.empty:
         l, b = _gal(only)
-        ax.scatter(np.deg2rad(l), np.deg2rad(b), s=5, alpha=0.45,
+        ax.scatter(np.deg2rad(l), np.deg2rad(b), s=5, alpha=0.65,
                    color="#9aa0a6", edgecolors="none",
                    label=f"Gaia-only clean (N={len(only)})")
 
@@ -181,7 +181,7 @@ def fig2_sky(only: pd.DataFrame, strict: pd.DataFrame, top: pd.DataFrame):
         l, b = _gal(topk)
         ax.scatter(np.deg2rad(l), np.deg2rad(b), s=120, marker="*",
                    color="red", edgecolors="black", linewidths=0.7,
-                   label="Top-3 unbound", zorder=10)
+                   label="Top-3 candidates (MWPot14)", zorder=10)
         for i, (_, r) in enumerate(topk.iterrows(), 1):
             ax.annotate(str(i), xy=(np.deg2rad(l[i - 1]), np.deg2rad(b[i - 1])),
                         xytext=(8, 8), textcoords="offset points", fontsize=11,
@@ -206,7 +206,7 @@ def fig3_distance(master: pd.DataFrame, prelim_top: pd.DataFrame):
                label=fr"$\varpi/\sigma_\varpi > 5$  (N={int(qok.sum())})")
     ax.scatter(sub.loc[~qok, "distance_pc_inverse_parallax"],
                sub.loc[~qok, "bj_distance_pc"],
-               s=8, alpha=0.4, color="tab:gray",
+               s=8, alpha=0.6, color="#5a5d60",
                label=fr"$\varpi/\sigma_\varpi \leq 5$  (N={int((~qok).sum())})")
 
     top50_median = None
@@ -249,7 +249,7 @@ def fig4_toomre(only: pd.DataFrame, strict: pd.DataFrame, top: pd.DataFrame):
     fig, ax = plt.subplots(figsize=(6.5, 5.5))
     onb = only.dropna(subset=["U", "V", "W"])
     ax.scatter(onb["V"], np.sqrt(onb["U"] ** 2 + onb["W"] ** 2),
-               s=5, alpha=0.35, color="lightgray",
+               s=5, alpha=0.55, color="#7a7d80",
                label=f"Gaia-only clean (N={len(onb)})")
     snb = strict.dropna(subset=["U", "V", "W"])
     ax.scatter(snb["V"], np.sqrt(snb["U"] ** 2 + snb["W"] ** 2),
@@ -260,7 +260,7 @@ def fig4_toomre(only: pd.DataFrame, strict: pd.DataFrame, top: pd.DataFrame):
         topk = top.head(3)
         ax.scatter(topk["V"], np.sqrt(topk["U"] ** 2 + topk["W"] ** 2),
                    s=110, marker="*", color="red", edgecolors="black",
-                   linewidths=0.6, label="Top-3 unbound", zorder=10)
+                   linewidths=0.6, label="Top-3 candidates (MWPot14)", zorder=10)
         for i, (_, r) in enumerate(topk.iterrows(), 1):
             ax.annotate(str(i), xy=(r["V"], np.sqrt(r["U"] ** 2 + r["W"] ** 2)),
                         xytext=(6, 6), textcoords="offset points", fontsize=10,
@@ -298,7 +298,7 @@ def fig5_vgsr_distance(only: pd.DataFrame, strict: pd.DataFrame, top: pd.DataFra
         return df["V_GSR"] / df["v_esc"]
 
     onb = only.dropna(subset=["distance_pc", "V_GSR", "v_esc"])
-    ax.scatter(_d_kpc(onb), _ratio(onb), s=6, alpha=0.35, color="lightgray",
+    ax.scatter(_d_kpc(onb), _ratio(onb), s=6, alpha=0.55, color="#7a7d80",
                label=f"Gaia-only clean (N={len(onb)})", zorder=1)
     snb = strict.dropna(subset=["distance_pc", "V_GSR", "v_esc"])
     ax.scatter(_d_kpc(snb), _ratio(snb), s=14, alpha=0.75, color="tab:blue",
@@ -307,7 +307,7 @@ def fig5_vgsr_distance(only: pd.DataFrame, strict: pd.DataFrame, top: pd.DataFra
 
     # unbound boundary
     ax.axhline(1.0, color="black", lw=1.0, ls="--", zorder=3,
-               label=r"$V_\mathrm{GSR} = v_\mathrm{esc}$ (unbound boundary)")
+               label=r"$v_\mathrm{grf} = v_\mathrm{esc}$ (unbound boundary)")
     ax.axhspan(1.0, ax.get_ylim()[1] if ax.get_ylim()[1] > 1 else 3,
                facecolor="red", alpha=0.05, zorder=0)
 
@@ -316,7 +316,7 @@ def fig5_vgsr_distance(only: pd.DataFrame, strict: pd.DataFrame, top: pd.DataFra
         topk = topk.dropna(subset=["distance_pc", "V_GSR", "v_esc"])
         ax.scatter(_d_kpc(topk), _ratio(topk), s=140, marker="*",
                    color="red", edgecolors="black", linewidths=0.7,
-                   label="Top-3 unbound", zorder=10)
+                   label="Top-3 candidates (MWPot14)", zorder=10)
         for i, (_, r) in enumerate(topk.iterrows(), 1):
             ax.annotate(f"{i}", xy=(r["distance_pc"] / 1000.0,
                                     r["V_GSR"] / r["v_esc"]),
